@@ -38,3 +38,16 @@ def load_mnist(n_labelled=100):
                                                       stratify=y_train)
 
     return X_unlabelled, X_labelled, y, X_test, y_test
+
+
+def iterate_minibatches(X, batch_size, y=None, shuffle=True):
+    n = X.shape[0]
+    idx = np.arange(n)
+    if shuffle:
+        np.random.shuffle(idx)
+    for start_idx in range(0, n - batch_size + 1, batch_size):
+        idx_slice = idx[start_idx:start_idx+batch_size]
+        mini_batch = X[idx_slice]
+        if y is not None:
+            mini_batch = (mini_batch, y[idx_slice])
+        yield mini_batch
