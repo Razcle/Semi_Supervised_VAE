@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 
-def load_mnist(n_labelled=100):
+def load_mnist(n_labelled=100, n_labels=10):
     def load_images(fn):
         with gzip.open(fn, "rb") as f:
             data = np.frombuffer(f.read(), np.uint8, offset=16)
@@ -37,7 +37,12 @@ def load_mnist(n_labelled=100):
                                                       train_size=n_labelled,
                                                       stratify=y_train)
 
-    return X_unlabelled, X_labelled, y, X_test, y_test
+    def one_hot(v):
+        out = np.zeros((v.shape[0], n_labels), dtype=np.uint8)
+        out[np.arange(v.shape[0]), v] = 1
+        return out
+
+    return X_unlabelled, X_labelled, one_hot(y), X_test, one_hot(y_test)
 
 
 def iterate_minibatches(X, batch_size, y=None, shuffle=True):

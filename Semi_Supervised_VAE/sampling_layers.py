@@ -1,3 +1,4 @@
+import theano
 import theano.tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
@@ -20,7 +21,8 @@ class GaussianSampleLayer(nn.layers.MergeLayer):
         else:
             shape = (self.input_shapes[0][0] or mu.shape[0],
                      self.input_shapes[0][1] or mu.shape[1])
-            return mu + T.exp(log_sd) * self.rng.normal(shape)
+            return mu + (T.exp(log_sd) *
+                         self.rng.normal(shape, dtype=theano.config.floatX))
 
 
 class BernoulliSampleLayer(nn.layers.Layer):
@@ -37,4 +39,4 @@ class BernoulliSampleLayer(nn.layers.Layer):
         if deterministic:
             return probs
         else:
-            return self.rng.multinomial(pvals=probs)
+            return self.rng.multinomial(pvals=probs, dtype=theano.config.floatX)
