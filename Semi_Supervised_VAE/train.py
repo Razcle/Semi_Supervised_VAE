@@ -12,7 +12,6 @@ import Semi_Supervised_VAE.sampling_layers as sl
 from Semi_Supervised_VAE import util
 
 TWO_PI = T.constant(2 * np.pi, dtype=theano.config.floatX)
-EPS = 1e-5
 
 
 def build_model(x_sym):
@@ -103,7 +102,7 @@ def log_gaussian_pdf(z, mu, log_sigma):
 
 def train(X_unlabelled, X_labelled, y_train, X_test, y_test):
     x_sym = T.matrix("X")
-    y_sym = T.matrix("y", dtype="uint8")
+    y_sym = T.matrix("y")#, dtype="uint8")
 
     prior_y = T.constant(0.1, dtype=theano.config.floatX)
 
@@ -116,7 +115,7 @@ def train(X_unlabelled, X_labelled, y_train, X_test, y_test):
 
     def build_loss(supervised):
         bc = nn.objectives.binary_crossentropy
-        nll = T.sum(bc(p_x.clip(EPS, 1 - EPS), x_sym), axis=1)
+        nll = T.sum(bc(p_x, x_sym), axis=1)
         p_theta_y = T.log(prior_y)
         p_theta_z = log_gaussian_pdf(z, T.zeros_like(z), T.zeros_like(z))
         q_z = log_gaussian_pdf(z, mu, log_sigma)
@@ -129,7 +128,7 @@ def train(X_unlabelled, X_labelled, y_train, X_test, y_test):
         else:
             cc = nn.objectives.categorical_crossentropy
 
-            loss += alpha * cc(p_y.clip(EPS, 1 - EPS), y_sym)
+            loss += alpha * cc(p_y, y_sym.argmax(axis=1))
 
         return loss.mean(axis=0)
 
@@ -137,42 +136,47 @@ def train(X_unlabelled, X_labelled, y_train, X_test, y_test):
     unsupervised_loss = -build_loss(supervised=False)
 
     params = nn.layers.get_all_params(layers[0], trainable=True)
-    supervised_updates = nn.updates.adam(supervised_loss, params)
-    unsupervised_updates = nn.updates.adam(unsupervised_loss, params)
+    supervised_updates = nn.updates.adam(supervised_loss, params, learning_rate=1e-4)
+    unsupervised_updates = nn.updates.adam(unsupervised_loss, params, learning_rate=1e-4)
 
     train_supervised = theano.function([x_sym, y_sym], supervised_loss,
                                        updates=supervised_updates)
     train_unsupervised = theano.function([x_sym, y_sym], unsupervised_loss,
                                          updates=unsupervised_updates)
 
-    test_loss = T.eq(p_y.argmax(axis=1), y_sym).sum()
+    test_loss = T.eq(p_y.argmax(axis=1), y_sym.argmax(axis=1)).sum()
     test_fn = theano.function([x_sym, y_sym], test_loss)
 
-    n_epochs = 1
-    batch_size = 1000
+    n_epochs = 150
+    batch_size = 100
     n_labels = 10
 
+    n_mb_u = X_unlabelled.shape[0] // batch_size
+    n_mb_s = X_labelled.shape[0] // batch_size
+
     for i in range(n_epochs):
+        unsup_loss = 0
         for j, X_mb in enumerate(util.iterate_minibatches(X_unlabelled,
                                                           batch_size)):
             mb_loss = 0
             for l in range(n_labels):
                 y_mb = np.zeros((batch_size, 10), dtype=np.uint8)
                 y_mb[:, l] = 1
-                mb_loss += train_unsupervised(X_mb, y_mb)
-            print("Epoch {},\tminibatch {}:\t\tUnsupervised loss={}"
-                  .format(i+1, j+1, mb_loss))
+                unsup_loss += train_unsupervised(X_mb, y_mb)
+        print("Epoch {}:\t\tUnsupervised loss={}".format(i+1,
+                                                         unsup_loss / n_mb_u))
 
+        sup_loss = 0
         for j, (X_mb, y_mb) in enumerate(util.iterate_minibatches(X_labelled,
                                                                   batch_size,
                                                                   y=y_train)):
-            mb_loss = train_supervised(X_mb, y_mb)
-            print("Epoch {},\tminibatch {}:\t\tSupervised loss={}"
-                  .format(i+1, j+1, mb_loss))
+            sup_loss += train_supervised(X_mb, y_mb)
+        print("\t\t\tSupervised loss={}"
+                  .format(sup_loss / n_mb_s))
 
     n_correct = 0
     for X_mb, y_mb in util.iterate_minibatches(X_test, batch_size,
                                                y=y_test, shuffle=False):
         n_correct += test_fn(X_mb, y_mb)
-    print("{}\% test images correctly classified after "
+    print("{0:.2f}% test images correctly classified after "
           "training".format(n_correct / y_test.shape[0] * 100))
